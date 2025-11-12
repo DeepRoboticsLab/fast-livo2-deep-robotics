@@ -1,0 +1,58 @@
+source /opt/ros/foxy/setup.bash 
+source ~/lite_cog_ros2/driver/mid360_ws/install/setup.bash 
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE=/home/ysc/fastdds_lite3.xml
+
+ros2 launch livox_ros_driver2 msg_MID360_launch.py
+ros2 launch livox_ros_driver2 rviz_MID360_launch.py
+
+source /opt/ros/foxy/setup.bash 
+source /home/ysc/lite_cog_ros2/driver/realsense_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE=/home/ysc/fastdds_lite3.xml
+
+ros2 launch realsense2_camera rs_launch.py enable_rgbd:=true enable_sync:=true align_depth.enable:=true enable_color:=true enable_depth:=true 
+
+ros2 launch realsense2_camera rs_launch.py enable_rgbd:=true enable_sync:=true align_depth.enable:=true enable_color:=true enable_depth:=true color_fps:=15.0
+
+
+source /opt/ros/humble/setup.bash 
+export ROS_DOMAIN_ID=0
+source /home/percy/third_party/fast_livo2/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE=/home/percy/third_party/orb_test/ORB3_ROS2_Ubuntu2204/fastdds.xml
+
+ros2 launch fast_livo mapping_avia.launch.py use_rviz:=True
+
+ros2 bag record /camera/color/image_raw /livox/lidar /livox/imu
+
+########################### NEW ##########################################
+# lite3 1 
+source /opt/ros/foxy/setup.bash 
+source ~/lite_cog_ros2/driver/mid360_ws/install/setup.bash 
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ros2 launch livox_ros_driver2 msg_MID360_launch.py
+
+# lite3 2 
+source /opt/ros/foxy/setup.bash 
+source /home/ysc/lite_cog_ros2/driver/realsense_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ros2 launch realsense2_camera rs_launch.py enable_rgbd:=false enable_sync:=false align_depth.enable:=false enable_color:=true enable_depth:=false color_fps:=15.0 color_width:=640 color_height:=360
+
+
+# lite3  3
+source /opt/ros/foxy/setup.bash 
+source ~/lite_cog_ros2/driver/mid360_ws/install/setup.bash 
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ros2 bag record /camera/color/image_raw /livox/lidar /livox/imu
+
+
+
+# my laptop
+source /opt/ros/humble/setup.bash 
+export ROS_DOMAIN_ID=0
+source /home/percy/third_party/fast_livo2/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ros2 launch fast_livo mapping_avia.launch.py use_rviz:=True
+
+
