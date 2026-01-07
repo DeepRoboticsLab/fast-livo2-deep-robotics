@@ -8,3 +8,6 @@ install/*
 log/*
 data/*
 .vscode/*
+src/FAST-LIVO2/Log/imu.txt
+src/FAST-LIVO2/Log/mat_out.txt
+src/FAST-LIVO2/Log/mat_pre.txt

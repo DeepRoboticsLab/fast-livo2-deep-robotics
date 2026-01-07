@@ -1,7 +1,7 @@
 /**:
   ros__parameters:
     common:
-      img_topic: "/camera/color/image_raw"
+      img_topic: "/left_camera/image"
       lid_topic: "/livox/lidar"
       imu_topic: "/livox/imu"
       img_en: 1
