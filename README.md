@@ -31,7 +31,13 @@ cmake .. && make -j
 sudo make install
 ```
 
-Note: we are using Jetpack 6.1 and the cmake version is 3.22.
+Note: we are using Jetpack 6.1 and the cmake version is 3.22.\
+
+### 2.2 Install realsense
+
+https://github.com/IntelRealSense/librealsense/blob/master/doc/installation.md
+
+https://github.com/realsenseai/realsense-ros?tab=readme-ov-file#option-2-install-from-source
 
 ### 2.2 Build FAST-LIVO2
 
@@ -39,7 +45,8 @@ Install required ROS2 packages:
 
 ```bash
 sudo apt update
-sudo apt install ros-humble-pcl-ros ros-humble-compressed-image-transport ros-humble-sophus
+sudo apt -y install ros-humble-pcl-ros ros-humble-compressed-image-transport ros-humble-sophus 
+sudo apt -y install ros-humble-librealsense2* ros-humble-realsense2-*
 ```
 
 **Important Note on Cloning:** For FAST-LIVO2, livox_ros_driver2, and Livox-SDK2, use `git clone` to ensure complete cloning (including branches and submodules). Do not download as ZIP, as it may cause errors when running launch files due to missing branches.
@@ -67,7 +74,8 @@ If successful, you should see output indicating completion.
 Verify packages:
 
 ```bash
-source fast-livo2-deep-robotics/install/setup.bash
+cd fast-livo2-deep-robotics
+source install/setup.bash
 ros2 pkg list | grep livo
 ```
 
@@ -95,5 +103,43 @@ This should launch the mapping process with RViz visualization.
 
 ## 4. Setup self-developed locomotion policy through ROS2 on Lite3 robot
 
+Upgrade your Lite3 robot through OTA to version ???. Turn on your robot, put it on a flat ground and switch to SDK mode.
+
+``` 
+git clone https://github.com/DeepRoboticsLab/sdk_deploy.git
+```
+
+sim-to-sim
+
+sim-to-real
+
+
+
 ## 5. Run FAST-LIVO2 on real Lite3 robot
+
+modify config and recompile on AGX Jetson Orin.
+then open 3 terminals
+
+
+```bash 
+# 1 
+cd fast-livo2-deep-robotics
+source install/setup.bash
+ros2 launch livox_ros_driver2 msg_MID360_launch.py
+```
+
+```bash 
+# 2
+cd fast-livo2-deep-robotics
+source install/setup.bash
+ros2 launch realsense2_camera rs_launch.py enable_rgbd:=false enable_sync:=false align_depth.enable:=false enable_color:=true enable_depth:=false color_fps:=15.0 color_width:=640 color_height:=360
+```
+
+
+```bash 
+# 3
+cd fast-livo2-deep-robotics
+source install/setup.bash
+ros2 launch fast_livo mapping_avia.launch.py use_rviz:=True
+```
 
