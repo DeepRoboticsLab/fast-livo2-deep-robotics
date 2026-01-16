@@ -1,5 +1,5 @@
 # Hardware extension for Lite3 Robot. Reproduce FAST-LIVO2 as an example.
-This repo documents the process of installing and reproducing FAST-LIVO2 on DEEP Robotics Lite3 robot, including camera/lidar installation, onboard compute extension and how to combine these with a self-developed locomotion policy through ROS2.
+This repo documents the process of installing and reproducing FAST-LIVO2 on DEEP Robotics Lite3 robot, including camera/lidar installation, onboard compute extension and how to test this in an outdoor environment. Original [repo](https://github.com/hku-mars/FAST-LIVO2) and [paper](https://arxiv.org/abs/2408.14035).
 
 **System Environment:** Ubuntu 22.04, ROS2 Humble, Lite3 Venture, AGX Jetson Orin (or other onboard compute)
 
