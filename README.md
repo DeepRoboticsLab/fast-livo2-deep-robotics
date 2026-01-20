@@ -210,3 +210,14 @@ ros2 launch fast_livo mapping_avia.launch.py use_rviz:=True
 
 Full ROS2 graph:
 
+## License
+
+This project is licensed under the GNU General Public License v2.0 (GPL-2.0).
+
+This project incorporates or derives from the following open-source projects:
+
+- [FAST-LIVO2](https://github.com/hku-mars/FAST-LIVO2) (GPL-2.0)
+- [livox_ros_driver2](https://github.com/Livox-SDK/livox_ros_driver2) (MIT License)
+- [Livox-SDK2](https://github.com/Livox-SDK/Livox-SDK2) (MIT License)
+
+See the LICENSE file for details.
