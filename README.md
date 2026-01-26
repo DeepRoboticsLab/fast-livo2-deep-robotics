@@ -1,7 +1,9 @@
 # Hardware extension for Lite3 Robot. Reproduce FAST-LIVO2 as an example.
-This repo documents the process of installing and reproducing FAST-LIVO2 on DEEP Robotics Lite3 robot, including camera/lidar installation, onboard compute extension and how to test this in an outdoor environment. Original [repo](https://github.com/hku-mars/FAST-LIVO2) and [paper](https://arxiv.org/abs/2408.14035).
+[![Discord](https://img.shields.io/badge/-Discord-5865F2?style=flat&logo=Discord&logoColor=white)](https://discord.gg/gdM9mQutC8)
+## 0. Overview
+This repo documents the process of installing and reproducing FAST-LIVO2 on DEEP Robotics Lite3 robot, including camera/lidar installation, onboard compute extension and how to test this in an outdoor environment. Original [repo](https://github.com/hku-mars/FAST-LIVO2) and [paper](https://arxiv.org/abs/2408.14035). And you can watch our tutorial videos on Bilibili or Youtube.
 
-**System Environment:** Ubuntu 22.04, ROS2 Humble, Lite3 Venture, AGX Jetson Orin (or other onboard compute)
+**System Environment:** Ubuntu 22.04, ROS2 Humble, Lite3 Venture (ONLY THIS VERSION!), AGX Jetson Orin (or other onboard compute)
 
 ## 1. Hardware setup
 ### 1.1 Onboard compute setup and ROS2 installation
@@ -11,7 +13,7 @@ Please setup your onboard compute and install ROS2 on it. For details, please ch
 
 ### 1.2 Intergration with Lite3 robot
 
-If you have Lite3 pro/lidar, you don't need further hardware extension cause there is already a Orin NX and you can use that as additional onboard compute. If you have Lite3 venture, you can follow this guide.
+If you have Lite3 pro/lidar, you don't need further hardware extension cause there is already a Orin NX and you can use that as additional onboard compute. If you have Lite3 venture, you can follow the installation process in our video. For the 3d printed structure parts, you can download them from [here](https://drive.google.com/drive/folders/1KmWNuOF0Qg5XM6EQKRiWrkJJhoBknjIZ?usp=drive_link). 
 
 ## 2. FAST-LIVO2 Installation and Reproduction
 
@@ -159,22 +161,7 @@ ros2 bag play Retail_Street  # Use space bar to control play/pause
 ```
 
 This should launch the mapping process with RViz visualization.
-
-## 4. Setup self-developed locomotion policy through ROS2 on Lite3 robot
-
-Upgrade your Lite3 robot through OTA to version ???. Turn on your robot, put it on a flat ground and switch to SDK mode.
-
-``` 
-git clone https://github.com/DeepRoboticsLab/sdk_deploy.git
-```
-
-sim-to-sim
-
-sim-to-real
-
-
-
-## 5. Run FAST-LIVO2 on real Lite3 robot
+## 4. Run FAST-LIVO2 on real Lite3 robot
 
 modify config and recompile on AGX Jetson Orin.
 then open 3 terminals
@@ -191,24 +178,15 @@ ros2 launch livox_ros_driver2 msg_MID360_launch.py
 # 2
 cd fast-livo2-deep-robotics
 source install/setup.bash
-ros2 launch realsense2_camera rs_launch.py enable_rgbd:=false enable_sync:=false align_depth.enable:=false enable_color:=true enable_depth:=false color_fps:=15.0 color_width:=640 color_height:=360
+ros2 launch realsense2_camera rs_launch.py enable_rgbd:=false enable_sync:=false align_depth.enable:=false enable_color:=true enable_depth:=false
 ```
 
 ```bash 
 # 3
-cd sdk_deploy
-source install/setup.bash
-ros2 run lite3_sdk_deploy sdk_deploy
-```
-
-```bash 
-# 4
 cd fast-livo2-deep-robotics
 source install/setup.bash
 ros2 launch fast_livo mapping_avia.launch.py use_rviz:=True
 ```
-
-Full ROS2 graph:
 
 ## License
 
