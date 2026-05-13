@@ -20,7 +20,12 @@ If you have Lite3 pro/lidar, you don't need further hardware extension cause the
 ### 2.1 Install Livox_ros_driver2 and Livox-SDK2
 #### 2.1.1 Lidar connection
 
-Connect the Mid360 following the [user manual](https://terra-1-g.djicdn.com/851d20f7b9f64838a34cd02351370894/Livox/Livox_Mid-360_User_Manual_EN.pdf). You will need a cable like this:
+This repo supports two Livox lidar variants:
+
+- **Mid-360** (original): use the `MID360` launch files and `MID360_config.json`.
+- **Mid-360s** (new variant): use the `MID360s` launch files and `MID360s_config.json`. Both the Livox-SDK2 and `livox_ros_driver2` in this repo have been extended to support the Mid-360s protocol (new command handler, host net info schema, and dedicated config samples under `src/Livox-SDK2/samples/*/mid360s_config.json`).
+
+Connect your lidar following the official user manual for your variant: [Mid-360 user manual](https://terra-1-g.djicdn.com/851d20f7b9f64838a34cd02351370894/Livox/Livox_Mid-360_User_Manual_EN.pdf) or [Mid-360s user manual](https://terra-1-g.djicdn.com/65c028cd298f4669a7f0e40e50ba1131/Mid-360S/UM/Livox_Mid-360s_User_Manual_en.pdf). You will need a cable like this:
 
 <img src="cable.jpg" alt="My screenshot" width="400">
 
@@ -139,7 +144,18 @@ ros2 pkg list | grep livo
 
 Expected output should include `fast_livo` and `livox_ros_driver2`.
 
-Change the ip in src/livox_ros_driver2/config/MID360_config.json to use the ip from step 2.1.1. Fill the host with the actual host ip and the lidar ip with the actual lidar ip. If you can `ros2 launch livox_ros_driver2 rviz_MID360_launch.py` and see lidar points, this step is successful.
+Change the ip in the matching config file to use the ip from step 2.1.1. Fill the host with the actual host ip and the lidar ip with the actual lidar ip.
+
+- **If you are using Mid-360**, edit `src/livox_ros_driver2/config/MID360_config.json` and run:
+  ```bash
+  ros2 launch livox_ros_driver2 rviz_MID360_launch.py
+  ```
+- **If you are using Mid-360s**, edit `src/livox_ros_driver2/config/MID360s_config.json` and run:
+  ```bash
+  ros2 launch livox_ros_driver2 rviz_MID360s_launch.py
+  ```
+
+If you can see lidar points in RViz, this step is successful.
 
 ## 3. Run FAST-LIVO2 through ROS2 bag
 
@@ -171,6 +187,7 @@ then open 3 terminals
 # 1 
 cd fast-livo2-deep-robotics
 source install/setup.bash
+# Use msg_MID360_launch.py for Mid-360, or msg_MID360s_launch.py for Mid-360s
 ros2 launch livox_ros_driver2 msg_MID360_launch.py
 ```
 
