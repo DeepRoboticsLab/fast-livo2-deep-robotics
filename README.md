@@ -157,9 +157,23 @@ Change the ip in the matching config file to use the ip from step 2.1.1. Fill th
 
 If you can see lidar points in RViz, this step is successful.
 
+
 ## 3. Run FAST-LIVO2 through ROS2 bag
 
 You can download the ROS2 dataset from the original FAST-LIVO2 (Retail_Street.bag) [here](https://drive.google.com/drive/folders/15RL0__M6ZcCCf0qx8_IM40qhhoPoYnNf?usp=drive_link).
+
+> **Note:** The original dataset was recorded using the older `livox_ros_driver`. Since we are using the newer `livox_ros_driver2`, you must update the topic type inside the dataset database before playing it. Otherwise, the lidar data will be ignored.
+
+**Step 1: Install the sqlite3 tool**
+Open your terminal and install `sqlite3` to modify the bag file:
+```bash
+sudo apt update && sudo apt install sqlite3
+```
+**Step 2: Update the topic type in the dataset**
+Go to the directory where you downloaded the dataset (e.g., `data`), and run the following command to modify the database:
+```bash
+sqlite3 Retail_Street.db3 "UPDATE topics SET type = 'livox_ros_driver2/msg/CustomMsg' WHERE name = '/livox/lidar';"
+```
 
 Run the algorithm:
 
@@ -173,7 +187,7 @@ Go to the place where you download the dataset and open a new terminal:
 
 ```bash
 source install/setup.bash
-ros2 bag play Retail_Street  # Use space bar to control play/pause
+ros2 bag play Retail_Street.db3  # Use space bar to control play/pause
 ```
 
 This should launch the mapping process with RViz visualization.
