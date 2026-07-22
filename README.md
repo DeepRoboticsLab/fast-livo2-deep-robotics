@@ -243,7 +243,7 @@ Software correction in `src/fast_livo/src/LIVMapper.cpp`:
  
 **Known limitation:** this is a software approximation, not a true hardware sync. Sharp turns can still cause visible camera-LiDAR frame misalignment and accumulated drift in very large environments can eventually exceed what the filter can correct for. For applications needing tighter synchronization, hardware sync via the Livox M12 PPS pin and replacing the D435i with the D415.
  
-**Full results and test breakdown:** see the [project poster](src/poster.pdf)
+**Full results and test breakdown:** see the [project poster](poster.pdf)
 
 ## License
 
