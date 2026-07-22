@@ -228,8 +228,11 @@ Software correction in `src/fast_livo/src/LIVMapper.cpp`:
 - **Camera offset:** the RealSense stream is corrected independently via a fixed `img_time_offset`, since its driver already timestamps frames against the host clock rather than drifting the way the Livox IMU does. This value is set in the launch/config YAML rather than computed at runtime.
 - **Non-blocking timestamp handling:** packet-drop traps that previously discarded IMU/image frames on a detected timestamp jump were replaced with logged warnings, so the pipeline no longer stalls on transient jitter.
 - **Thread safety:** all shared buffers (`mtx_buffer`, `mtx_buffer_imu_prop`) are now guarded with `std::lock_guard` for RAII-safe locking across callbacks, and reusable point cloud containers were made `static` to reduce per-frame heap allocation.
-**Result:** runtime went from ~20 seconds to indefinite, IMU timestamp jump warnings dropped from continuous to zero after filter convergence, and map coverage went from partial to complete across indoor, basement, and outdoor test environments. Measured accuracy: 1.04 m loop-closure drift over a 70.5 s closed loop, and 1.74 cm (0.87%) error on an independently verified room-width measurement.
  
+**Sensor clock sync pipeline:**
+ 
+<img src="sync_pipeline.png" alt="Sensor clock sync pipeline diagram" width="500">
+
 **Demonstration — plant reconstruction (baseline vs. improved):**
  
 | Baseline (unsynchronized) | Improved (EMA sync) |
@@ -238,14 +241,9 @@ Software correction in `src/fast_livo/src/LIVMapper.cpp`:
  
 *Without sync, the reconstruction halts early and leaves the flowerpot base and surrounding floor incomplete. With the EMA-based correction active, the flowerpot and surrounding area are captured near-completely.*
  
-**Demonstration — small room width accuracy:**
+**Known limitation:** this is a software approximation, not a true hardware sync. Sharp turns can still cause visible camera-LiDAR frame misalignment and accumulated drift in very large environments can eventually exceed what the filter can correct for. For applications needing tighter synchronization, hardware sync via the Livox M12 PPS pin and replacing the D435i with the D415.
  
-<img src="small.png" alt="Small room corridor reconstruction" width="400">
-*Reconstruction of a narrow elevator corridor, used to validate map accuracy against a known physical measurement. Corridor width measured in CloudCompare came out to 2.017 m against a real-world measurement of 2.000 m — 1.74 cm (0.87%) error.*
- 
-**Known limitation:** this is a software approximation, not a true hardware sync. Sharp turns can still cause visible camera-LiDAR frame misalignment and accumulated drift in very large environments can eventually exceed what the filter can correct for. For applications needing tighter synchronization, hardware sync via the Livox M12 PPS pin and replacing the D435i with the RGB/depth-coplanar D415.
- 
-Tune the EMA smoothing factor (`α`, default `0.01`) in `LIVMapper.cpp` if you need faster convergence at the cost of more noise sensitivity, or slower/smoother convergence for low-vibration platforms.
+**Full results and test breakdown:** see the [project poster](src/poster.pdf)
 
 ## License
 
