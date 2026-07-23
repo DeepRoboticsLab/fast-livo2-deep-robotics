@@ -218,6 +218,32 @@ cd fast-livo2-deep-robotics
 source install/setup.bash
 ros2 launch fast_livo mapping_avia.launch.py use_rviz:=True
 ```
+## 5. Multi-Sensor Soft Time Synchronization
+ 
+The Livox Mid-360s LiDAR and IMU run on separate hardware clocks with no shared reference. Without correction, the timestamp lag between them grows by roughly one second per second, causing FAST-LIVO2 to stall within ~20 seconds of runtime. Hardware synchronization (PTP, GPIO) was not viable here: PTP reaches the Livox unit but not its internal IMU oscillator, and the RealSense D435i's RGB and depth sensors sit on separate PCBs, so GPIO sync cannot reach the RGB stream this pipeline depends on.
+ 
+Software correction in `src/fast_livo/src/LIVMapper.cpp`:
+ 
+- **IMU-LiDAR offset:** an Exponential Moving Average filter (`α = 0.01`) continuously re-estimates the clock offset from live timestamp comparisons in `imu_cbk`, replacing the previous static/disabled offset correction.
+- **Camera offset:** the RealSense stream is corrected independently via a fixed `img_time_offset`, since its driver already timestamps frames against the host clock rather than drifting the way the Livox IMU does. This value is set in the launch/config YAML rather than computed at runtime.
+- **Non-blocking timestamp handling:** packet-drop traps that previously discarded IMU/image frames on a detected timestamp jump were replaced with logged warnings, so the pipeline no longer stalls on transient jitter.
+- **Thread safety:** all shared buffers (`mtx_buffer`, `mtx_buffer_imu_prop`) are now guarded with `std::lock_guard` for RAII-safe locking across callbacks, and reusable point cloud containers were made `static` to reduce per-frame heap allocation.
+ 
+**Sensor clock sync pipeline:**
+ 
+<img src="sync_pipeline.png" alt="Sensor clock sync pipeline diagram" width="500">
+
+**Demonstration — plant reconstruction (baseline vs. improved):**
+ 
+|Real-life reference photo| Baseline (unsynchronized) | Improved (EMA sync) |
+|---|---|---|
+|<img src="plant_real.png" alt="Plant reconstruction baseline" width="380"> | <img src="plant_old.png" alt="Plant reconstruction baseline" width="380"> | <img src="plant_new.png" alt="Plant reconstruction with software sync" width="380"> |
+ 
+*Without sync, the reconstruction halts early and leaves the flowerpot base and surrounding floor incomplete. With the EMA-based correction active, the flowerpot and surrounding area are captured near-completely.*
+ 
+**Known limitation:** this is a software approximation, not a true hardware sync. Sharp turns can still cause visible camera-LiDAR frame misalignment and accumulated drift in very large environments can eventually exceed what the filter can correct for. For applications needing tighter synchronization, hardware sync via the Livox M12 PPS pin and replacing the D435i with the D415.
+ 
+**Full results and test breakdown:** see the [project poster](poster.pdf)
 
 ## License
 
