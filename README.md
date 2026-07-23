@@ -27,7 +27,7 @@ This repo supports two Livox lidar variants:
 
 Connect your lidar following the official user manual for your variant: [Mid-360 user manual](https://terra-1-g.djicdn.com/851d20f7b9f64838a34cd02351370894/Livox/Livox_Mid-360_User_Manual_EN.pdf) or [Mid-360s user manual](https://terra-1-g.djicdn.com/65c028cd298f4669a7f0e40e50ba1131/Mid-360S/UM/Livox_Mid-360s_User_Manual_en.pdf). You will need a cable like this:
 
-<img src="cable.jpg" alt="My screenshot" width="400">
+<img src="images/cable.jpg" alt="My screenshot" width="400">
 
 Plug the xt30 end to the 24V xt30 of lite3 and plug the ethernet end to a normal x86 ubuntu system. If you open Livoxviewer2 and see that lidar is connected, this step is successful. 
 
@@ -231,19 +231,19 @@ Software correction in `src/fast_livo/src/LIVMapper.cpp`:
  
 **Sensor clock sync pipeline:**
  
-<img src="sync_pipeline.png" alt="Sensor clock sync pipeline diagram" width="500">
+<img src="images/sync_pipeline.png" alt="Sensor clock sync pipeline diagram" width="500">
 
 **Demonstration — plant reconstruction (baseline vs. improved):**
  
 |Real-life reference photo| Baseline (unsynchronized) | Improved (EMA sync) |
 |---|---|---|
-|<img src="plant_real.png" alt="Plant reconstruction baseline" width="380"> | <img src="plant_old.png" alt="Plant reconstruction baseline" width="380"> | <img src="plant_new.png" alt="Plant reconstruction with software sync" width="380"> |
+|<img src="images/plant_real.png" alt="Plant reconstruction baseline" width="380"> | <img src="images/plant_old.png" alt="Plant reconstruction baseline" width="380"> | <img src="images/plant_new.png" alt="Plant reconstruction with software sync" width="380"> |
  
 *Without sync, the reconstruction halts early and leaves the flowerpot base and surrounding floor incomplete. With the EMA-based correction active, the flowerpot and surrounding area are captured near-completely.*
  
 **Known limitation:** this is a software approximation, not a true hardware sync. Sharp turns can still cause visible camera-LiDAR frame misalignment and accumulated drift in very large environments can eventually exceed what the filter can correct for. For applications needing tighter synchronization, hardware sync via the Livox M12 PPS pin and replacing the D435i with the D415.
  
-**Full results and test breakdown:** see the [project poster](poster.pdf)
+**Full results and test breakdown:** see the [project poster](images/poster.pdf)
 
 ## License
 
