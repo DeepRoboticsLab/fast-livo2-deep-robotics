@@ -218,7 +218,7 @@ cd fast-livo2-deep-robotics
 source install/setup.bash
 ros2 launch fast_livo mapping_avia.launch.py use_rviz:=True
 ```
-## 5. Multi-Sensor Time Synchronization Improvement
+## 5. Multi-Sensor Soft Time Synchronization
  
 The Livox Mid-360s LiDAR and IMU run on separate hardware clocks with no shared reference. Without correction, the timestamp lag between them grows by roughly one second per second, causing FAST-LIVO2 to stall within ~20 seconds of runtime. Hardware synchronization (PTP, GPIO) was not viable here: PTP reaches the Livox unit but not its internal IMU oscillator, and the RealSense D435i's RGB and depth sensors sit on separate PCBs, so GPIO sync cannot reach the RGB stream this pipeline depends on.
  
@@ -235,9 +235,9 @@ Software correction in `src/fast_livo/src/LIVMapper.cpp`:
 
 **Demonstration — plant reconstruction (baseline vs. improved):**
  
-| Baseline (unsynchronized) | Improved (EMA sync) |
-|---|---|
-| <img src="plant_old.png" alt="Plant reconstruction baseline" width="380"> | <img src="plant_new.png" alt="Plant reconstruction with software sync" width="380"> |
+|Real-life reference photo| Baseline (unsynchronized) | Improved (EMA sync) |
+|---|---|---|
+|<img src="plant_real.png" alt="Plant reconstruction baseline" width="380"> | <img src="plant_old.png" alt="Plant reconstruction baseline" width="380"> | <img src="plant_new.png" alt="Plant reconstruction with software sync" width="380"> |
  
 *Without sync, the reconstruction halts early and leaves the flowerpot base and surrounding floor incomplete. With the EMA-based correction active, the flowerpot and surrounding area are captured near-completely.*
  
