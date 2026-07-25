@@ -193,31 +193,243 @@ ros2 bag play Retail_Street.db3  # Use space bar to control play/pause
 This should launch the mapping process with RViz visualization.
 ## 4. Run FAST-LIVO2 on real Lite3 robot
 
-modify config and recompile on AGX Jetson Orin.
-then open 3 terminals
+The following deployment was verified with a Livox Mid-360s at
+`192.168.1.201`, an Intel RealSense D435i, and an AGX Jetson Orin running ROS
+2 Humble. Substitute the addresses and camera calibration for your own
+hardware where necessary.
 
+> **Important:** The checked-in `avia.yaml` and `camera_pinhole.yaml` retain
+> the original ROS2 bag/simulation defaults used in Section 3. Before a real
+> deployment, change the camera topic, image dimensions, and intrinsics as
+> described in Section 4.2, then rebuild the installed configuration. Revert
+> those fields to the checked-in defaults before running the example bag again.
 
-```bash 
-# 1 
-cd fast-livo2-deep-robotics
-source install/setup.bash
-# Use msg_MID360_launch.py for Mid-360, or msg_MID360s_launch.py for Mid-360s
-ros2 launch livox_ros_driver2 msg_MID360_launch.py
+### 4.1 Configure the LiDAR network
+
+The Ethernet adapter connected to the LiDAR must have a static IPv4 address on
+the same subnet. A link shown as `UP` is not sufficient if the interface has no
+IPv4 address. In this example, the host uses `192.168.1.45/24` and the LiDAR
+uses `192.168.1.201`.
+
+Find the Ethernet interface and NetworkManager connection:
+
+```bash
+ip -br address
+nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status
 ```
 
-```bash 
-# 2
-cd fast-livo2-deep-robotics
-source install/setup.bash
-ros2 launch realsense2_camera rs_launch.py enable_rgbd:=false enable_sync:=false align_depth.enable:=false enable_color:=true enable_depth:=false
+Configure the connection (replace the connection name and addresses as needed):
+
+```bash
+sudo nmcli connection modify "Wired connection 2" \
+  ipv4.method manual \
+  ipv4.addresses 192.168.1.45/24 \
+  ipv4.gateway "" \
+  ipv4.dns "" \
+  ipv4.never-default yes
+sudo nmcli connection down "Wired connection 2"
+sudo nmcli connection up "Wired connection 2"
 ```
 
-```bash 
-# 3
+`ipv4.never-default yes` prevents the LiDAR-only connection from replacing the
+Wi-Fi/default Internet route. Verify that packets to the LiDAR use Ethernet:
+
+```bash
+ip route get 192.168.1.201
+ping -c 3 192.168.1.201
+```
+
+The route should contain `dev eth0 src 192.168.1.45` (with your actual
+interface name). Configure the same addresses in the matching driver file:
+
+- Mid-360: `src/livox_ros_driver2/config/MID360_config.json`
+- Mid-360s: `src/livox_ros_driver2/config/MID360s_config.json`
+
+For the verified Mid-360s setup, the important fields are:
+
+```json
+"host_ip": "192.168.1.45"
+```
+
+```json
+"ip": "192.168.1.201"
+```
+
+If the driver reports `bind failed`, the configured `host_ip` is not assigned
+to a local interface, or another driver instance is already using the UDP
+ports.
+
+### 4.2 Configure the RealSense color stream
+
+FAST-LIVO2 requires the incoming image size to exactly match the camera model.
+The verified D435i configuration uses its RGB stream at `640x480x30` and
+publishes it on:
+
+```text
+/camera/camera/color/image_raw
+```
+
+Set `common.img_topic` in `src/FAST-LIVO2/config/avia.yaml`:
+
+```yaml
+common:
+  img_topic: "/camera/camera/color/image_raw"
+  lid_topic: "/livox/lidar"
+  imu_topic: "/livox/imu"
+```
+
+The checked-in simulation value is `/left_camera/image`; it must be replaced
+with the live RealSense topic shown above for real deployment. The LiDAR and
+IMU topics are the same in both cases.
+
+Set the matching resolution and calibrated intrinsics in
+`src/FAST-LIVO2/config/camera_pinhole.yaml`. The values below were read from
+the D435i used for this deployment and must not be assumed to apply to every
+camera:
+
+```yaml
+camera:
+  model: Pinhole
+  width: 640
+  height: 480
+  scale: 1.0
+  fx: 604.3154296875
+  fy: 603.8231811523438
+  cx: 325.12115478515625
+  cy: 261.0074462890625
+  d0: 0.0
+  d1: 0.0
+  d2: 0.0
+  d3: 0.0
+```
+
+Read the calibration reported by another camera with:
+
+```bash
+ros2 topic echo --once /camera/camera/color/camera_info
+```
+
+Use the `width`, `height`, and the `K` matrix entries (`fx=K[0]`,
+`fy=K[4]`, `cx=K[2]`, and `cy=K[5]`). The RealSense launch argument is
+`rgb_camera.color_profile`; using another parameter name or omitting it allows
+the driver to fall back to `1280x720x30`, which does not match the configuration
+above.
+
+After making these real-deployment changes, rebuild and source the workspace:
+
+```bash
 cd fast-livo2-deep-robotics
+source /opt/ros/humble/setup.bash
+colcon build --packages-select fast_livo --symlink-install
+source install/setup.bash
+```
+
+Confirm that the installed configuration contains the live topic and camera
+size, rather than the simulation defaults:
+
+```bash
+ros2 pkg prefix fast_livo
+grep -E "img_topic|width:|height:" \
+  install/fast_livo/share/fast_livo/config/{avia.yaml,camera_pinhole.yaml}
+```
+
+### 4.3 Start the sensors and mapping
+
+Stop old driver instances before starting. Do not switch or restart a sensor
+driver while FAST-LIVO2 is running because the resulting timestamp jump can
+reset IMU initialization. Start the three processes in order.
+
+Terminal 1 — LiDAR (Mid-360s):
+
+```bash
+cd fast-livo2-deep-robotics
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch livox_ros_driver2 msg_MID360s_launch.py
+```
+
+For a Mid-360, use `msg_MID360_launch.py` instead. The variant must match the
+physical device; a Mid-360s launched with the Mid-360 configuration may create
+the ROS node without publishing LiDAR or IMU messages.
+
+Terminal 2 — D435i RGB camera:
+
+```bash
+cd fast-livo2-deep-robotics
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch realsense2_camera rs_launch.py \
+  enable_rgbd:=false \
+  enable_sync:=false \
+  align_depth.enable:=false \
+  enable_color:=true \
+  enable_depth:=false \
+  rgb_camera.color_profile:=640x480x30
+```
+
+Confirm that the camera startup output says `Width: 640, Height: 480, FPS: 30`.
+
+Terminal 3 — FAST-LIVO2 and RViz:
+
+```bash
+cd fast-livo2-deep-robotics
+source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 launch fast_livo mapping_avia.launch.py use_rviz:=True
 ```
+
+Keep the complete sensor assembly stationary for several seconds during IMU
+initialization. Once initialization completes, move the robot gradually to
+build the map.
+
+### 4.4 Verify the live pipeline
+
+Check the message types:
+
+```bash
+ros2 topic type /livox/lidar
+ros2 topic type /livox/imu
+ros2 topic type /camera/camera/color/image_raw
+```
+
+Expected results:
+
+```text
+livox_ros_driver2/msg/CustomMsg
+sensor_msgs/msg/Imu
+sensor_msgs/msg/Image
+```
+
+Check that data, rather than only topic names, is present:
+
+```bash
+ros2 topic hz /livox/lidar
+ros2 topic hz /livox/imu
+ros2 topic hz /camera/camera/color/image_raw
+```
+
+The verified setup produces approximately 10 Hz LiDAR, 200 Hz LiDAR IMU, and
+30 Hz RGB images. Use `Ctrl+C` after measuring each topic. Then confirm that
+FAST-LIVO2 is publishing results:
+
+```bash
+ros2 topic hz /cloud_registered
+ros2 topic hz /aft_mapped_to_init
+ros2 topic hz /path
+```
+
+If RViz is empty, check the following before changing visualization settings:
+
+1. `ros2 node list` contains `/livox_lidar_publisher`, `/camera/camera`, and
+   `/laserMapping`.
+2. `ros2 topic info -v /livox/lidar` shows one publisher and the
+   `/laserMapping` subscriber.
+3. The camera is actually publishing the resolution specified in
+   `camera_pinhole.yaml`.
+4. The correct `msg_MID360s_launch.py` or `msg_MID360_launch.py` is running.
+5. No second/old Livox driver is holding the UDP ports.
+6. The sensor remained stationary long enough for IMU initialization.
+
 ## 5. Multi-Sensor Soft Time Synchronization
  
 The Livox Mid-360s LiDAR and IMU run on separate hardware clocks with no shared reference. Without correction, the timestamp lag between them grows by roughly one second per second, causing FAST-LIVO2 to stall within ~20 seconds of runtime. Hardware synchronization (PTP, GPIO) was not viable here: PTP reaches the Livox unit but not its internal IMU oscillator, and the RealSense D435i's RGB and depth sensors sit on separate PCBs, so GPIO sync cannot reach the RGB stream this pipeline depends on.
