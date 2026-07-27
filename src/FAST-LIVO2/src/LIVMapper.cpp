@@ -10,7 +10,7 @@ This file is subject to the terms and conditions outlined in the 'LICENSE' file,
 which is included as part of this source code package.
 
 Optimization through Synchronization:
-  - Dynamic offset estimation via EMA filter to align sensor clocks\
+  - Dynamic offset estimation via EMA filter to align sensor clocks
     and eliminate drift in maps. 
 
 */
@@ -733,8 +733,8 @@ void LIVMapper::RGBpointBodyToWorld(PointType const *const pi, PointType *const 
 void LIVMapper::standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg)
 {
   if (!lidar_en) return;
-  // Guard point cloud queue and timestamp buffers across asynchronous ROS callbacks  
   std::lock_guard<std::mutex> lock(mtx_buffer);
+  
   if (stamp2Sec(msg->header.stamp) < last_timestamp_lidar)
   {
     RCLCPP_ERROR(this->node->get_logger(),"lidar loop back, clear buffer");
@@ -752,15 +752,30 @@ void LIVMapper::standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::ConstShare
 void LIVMapper::livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr &msg_in)
 {
   if (!lidar_en) return;
-  // Guard point cloud queue and timestamp buffers across asynchronous ROS callbacks
   std::lock_guard<std::mutex> lock(mtx_buffer);
   livox_ros_driver2::msg::CustomMsg::SharedPtr msg(new livox_ros_driver2::msg::CustomMsg(*msg_in));
 
-  if (abs(last_timestamp_imu - stamp2Sec(msg->header.stamp)) > 1.0 && !imu_buffer.empty())
+  // Only check the sync condition ONCE using the buffer front. 
+  // This prevents ROS processing lag from falsely triggering the EMA on Retail_Street.
+  static bool sync_checked = false;
+  if (!sync_checked && !imu_buffer.empty())
   {
-    double timediff_imu_wrt_lidar = last_timestamp_imu - stamp2Sec(msg->header.stamp);
-    RCLCPP_INFO(this->node->get_logger(), "\033[95mSelf sync IMU and LiDAR, HARD time lag is %.10lf \n\033[0m", timediff_imu_wrt_lidar - 0.100);
-    imu_time_offset = timediff_imu_wrt_lidar;
+    double timediff_imu_wrt_lidar = stamp2Sec(imu_buffer.front()->header.stamp) - stamp2Sec(msg->header.stamp);
+    if (abs(timediff_imu_wrt_lidar) > 1.0)
+    {
+      RCLCPP_INFO(this->node->get_logger(), "\033[95mSelf sync IMU and LiDAR, HARD time lag is %.10lf \n\033[0m", timediff_imu_wrt_lidar - 0.100);
+      imu_time_offset = timediff_imu_wrt_lidar;
+      imu_sync_required = true;
+      
+      // Flush bad IMU data to reset the timeline to the new shifted reality
+      imu_buffer.clear();
+      last_timestamp_imu = -1.0; 
+      if (imu_prop_enable) {
+        std::lock_guard<std::mutex> prop_lock(mtx_buffer_imu_prop);
+        prop_imu_buffer.clear();
+      }
+    }
+    sync_checked = true;
   }
 
   double cur_head_time = stamp2Sec(msg->header.stamp);
@@ -796,14 +811,16 @@ void LIVMapper::imu_cbk(const sensor_msgs::msg::Imu::ConstSharedPtr &msg_in)
   
   sensor_msgs::msg::Imu::SharedPtr msg(new sensor_msgs::msg::Imu(*msg_in));
   double raw_imu_time = stamp2Sec(msg_in->header.stamp);
-  double current_measured_lag = raw_imu_time - last_timestamp_lidar;
-  // Calculate dynamic IMU-to-Lidar lag using Exponential Moving Average (EMA).
-  // This offset corrects a known Livox ROS driver issue where the IMU's
-  // own timestamp drifts from the LiDAR timestamp (same physical device/driver).
-  if (imu_time_offset == 0.0) imu_time_offset = current_measured_lag;
-  else imu_time_offset = imu_time_offset + 0.01 * (current_measured_lag - imu_time_offset);
+  double timestamp = raw_imu_time;
 
-  double timestamp = raw_imu_time - imu_time_offset;
+  // EMA only runs if a genuine hard hardware offset was found during startup
+  if (imu_sync_required)
+  {
+    double current_measured_lag = raw_imu_time - last_timestamp_lidar;
+    imu_time_offset = imu_time_offset + 0.01 * (current_measured_lag - imu_time_offset);
+    timestamp = raw_imu_time - imu_time_offset;
+  }
+
   msg->header.stamp = sec2Stamp(timestamp);
 
   if (fabs(last_timestamp_lidar - timestamp) > 0.5 && (!ros_driver_fix_en))
@@ -817,17 +834,16 @@ void LIVMapper::imu_cbk(const sensor_msgs::msg::Imu::ConstSharedPtr &msg_in)
   if (last_timestamp_imu > 0.0 && timestamp < last_timestamp_imu)
   {
     RCLCPP_ERROR(this->node->get_logger(), "imu loop back, offset: %lf \n", last_timestamp_imu - timestamp);
-    return;
+    return; // Dropping bad packet. Do NOT update baseline.
   }
 
   if (last_timestamp_imu > 0.0 && timestamp > last_timestamp_imu + 0.2)
   {
     RCLCPP_WARN(this->node->get_logger(), "imu time stamp Jumps %0.4lf seconds \n", timestamp - last_timestamp_imu);
-    // Removed production package rejection trap, because otherwise the sync pipeline would freeze, locking up ROS
+    return; // Dropping bad packet. Do NOT update baseline.
   }
 
   last_timestamp_imu = timestamp;
-
   imu_buffer.push_back(msg);
   cout<<"got imu: "<<timestamp<<" imu size "<<imu_buffer.size()<<endl;
   
@@ -858,7 +874,7 @@ void LIVMapper::img_cbk(const sensor_msgs::msg::Image::ConstSharedPtr &msg_in)
   sensor_msgs::msg::Image::SharedPtr msg(new sensor_msgs::msg::Image(*msg_in));
   // Camera is already on host/system time
   double raw_img_time = stamp2Sec(msg->header.stamp);
-  double img_time_correct = raw_img_time - img_time_offset;
+  double img_time_correct = raw_img_time + img_time_offset;
   
   if (abs(img_time_correct - last_timestamp_img) < 0.001) return;
   RCLCPP_INFO(this->node->get_logger(), "Get image, its header time: %.6f", img_time_correct);
@@ -866,13 +882,13 @@ void LIVMapper::img_cbk(const sensor_msgs::msg::Image::ConstSharedPtr &msg_in)
   if (img_time_correct < last_timestamp_img)
   {
     RCLCPP_ERROR(this->node->get_logger(), "image loop back. \n");
-    return;
+    return; // Dropping bad packet. Do NOT update baseline.
   }
 
-  if (img_time_correct - last_timestamp_img < 0.01)
+  if (img_time_correct - last_timestamp_img < 0.02)
   {
     RCLCPP_WARN(this->node->get_logger(), "Image need Jumps: %.6f", img_time_correct);
-    // Removed production pipeline freeze trap
+    return; // Dropping bad packet. Do NOT update baseline.
   }
 
   cv::Mat img_cur = getImageFromMsg(msg);
@@ -902,10 +918,10 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
       meas.lidar = lid_raw_data_buffer.front(); 
       if (meas.lidar->points.size() <= 1) return false;
 
-      meas.lidar_frame_beg_time = lid_header_time_buffer.front();                                                 
+      meas.lidar_frame_beg_time = lid_header_time_buffer.front();                                                
       meas.lidar_frame_end_time = meas.lidar_frame_beg_time + meas.lidar->points.back().curvature / double(1000);  
       meas.pcl_proc_cur = meas.lidar;
-      lidar_pushed = true;                                                                                        
+      lidar_pushed = true;                                                                                       
     }
 
     if (imu_en && last_timestamp_imu < meas.lidar_frame_end_time)
