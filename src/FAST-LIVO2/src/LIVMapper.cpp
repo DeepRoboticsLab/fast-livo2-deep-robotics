@@ -761,7 +761,7 @@ void LIVMapper::livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstShar
   if (!sync_checked && !imu_buffer.empty())
   {
     double timediff_imu_wrt_lidar = stamp2Sec(imu_buffer.front()->header.stamp) - stamp2Sec(msg->header.stamp);
-    if (abs(timediff_imu_wrt_lidar) > 1.0)
+    if (abs(timediff_imu_wrt_lidar) > 0.1)
     {
       RCLCPP_INFO(this->node->get_logger(), "\033[95mSelf sync IMU and LiDAR, HARD time lag is %.10lf \n\033[0m", timediff_imu_wrt_lidar - 0.100);
       imu_time_offset = timediff_imu_wrt_lidar;

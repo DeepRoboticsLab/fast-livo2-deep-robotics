@@ -436,7 +436,7 @@ The Livox Mid-360s LiDAR and IMU run on separate hardware clocks with no shared 
  
 Software correction in `src/fast_livo/src/LIVMapper.cpp`:
  
-- **IMU-LiDAR offset:** an Exponential Moving Average filter (`α = 0.01`) continuously re-estimates the clock offset from live timestamp comparisons in `imu_cbk`, replacing the previous static/disabled offset correction.
+- **IMU-LiDAR offset & Gating:** an Exponential Moving Average filter (`α = 0.01`) continuously re-estimates the clock offset from live timestamp comparisons in `imu_cbk`. To prevent artificial delay on pre-synced datasets (e.g., *Retail_Street*), a **one-time startup gate** checks if the initial hardware clock lag exceeds a threshold of **`> 0.1s`**. If the system is already synchronized, the EMA filter remains disabled; if a true hardware desynk is detected, the filter activates and stale queues are safely flushed to avoid loopback errors.
 - **Camera offset:** the RealSense stream is corrected independently via a fixed `img_time_offset`, since its driver already timestamps frames against the host clock rather than drifting the way the Livox IMU does. This value is set in the launch/config YAML rather than computed at runtime.
 - **Non-blocking timestamp handling:** packet-drop traps that previously discarded IMU/image frames on a detected timestamp jump were replaced with logged warnings, so the pipeline no longer stalls on transient jitter.
 - **Thread safety:** all shared buffers (`mtx_buffer`, `mtx_buffer_imu_prop`) are now guarded with `std::lock_guard` for RAII-safe locking across callbacks, and reusable point cloud containers were made `static` to reduce per-frame heap allocation.
