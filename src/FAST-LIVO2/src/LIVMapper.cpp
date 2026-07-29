@@ -8,16 +8,10 @@ Prof. Fu Zhang at <fuzhang@hku.hk>.
 
 This file is subject to the terms and conditions outlined in the 'LICENSE' file,
 which is included as part of this source code package.
-
-Optimization through Synchronization:
-  - Dynamic offset estimation via EMA filter to align sensor clocks\
-    and eliminate drift in maps. 
-
 */
 
 #include "LIVMapper.h"
 #include <vikit/camera_loader.h>
-#include <mutex>
 
 using namespace Sophus;
 LIVMapper::LIVMapper(rclcpp::Node::SharedPtr &node, std::string node_name, const rclcpp::NodeOptions & options)
@@ -195,6 +189,11 @@ void LIVMapper::initializeComponents(rclcpp::Node::SharedPtr &node)
 {
   downSizeFilterSurf.setLeafSize(filter_size_surf_min, filter_size_surf_min, filter_size_surf_min);
   
+  // extrinT.assign({0.04165, 0.02326, -0.0284});
+  // extrinR.assign({1, 0, 0, 0, 1, 0, 0, 0, 1});
+  // cameraextrinT.assign({0.0194384, 0.104689,-0.0251952});
+  // cameraextrinR.assign({0.00610193,-0.999863,-0.0154172,-0.00615449,0.0153796,-0.999863,0.999962,0.00619598,-0.0060598});
+
   extT << VEC_FROM_ARRAY(extrinT);
   extR << MAT_FROM_ARRAY(extrinR);
 
@@ -325,12 +324,21 @@ void LIVMapper::gravityAlignment()
 
 void LIVMapper::processImu() 
 {
+  // double t0 = omp_get_wtime();
+
   p_imu->Process2(LidarMeasures, _state, feats_undistort);
+
   if (gravity_align_en) gravityAlignment();
 
   state_propagat = _state;
   voxelmap_manager->state_ = _state;
   voxelmap_manager->feats_undistort_ = feats_undistort;
+
+  // double t_prop = omp_get_wtime();
+
+  // std::cout << "[ Mapping ] feats_undistort: " << feats_undistort->size() << std::endl;
+  // std::cout << "[ Mapping ] predict cov: " << _state.cov.diagonal().transpose() << std::endl;
+  // std::cout << "[ Mapping ] predict sta: " << state_propagat.pos_end.transpose() << state_propagat.vel_end.transpose() << std::endl;
 }
 
 void LIVMapper::stateEstimationAndMapping() 
@@ -380,6 +388,18 @@ void LIVMapper::handleVIO()
     latest_ekf_time = LidarMeasures.last_lio_update_time;
     state_update_flg = true;
   }
+
+  // int size_sub_map = vio_manager->visual_sub_map_cur.size();
+  // visual_sub_map->reserve(size_sub_map);
+  // for (int i = 0; i < size_sub_map; i++) 
+  // {
+  //   PointType temp_map;
+  //   temp_map.x = vio_manager->visual_sub_map_cur[i]->pos_[0];
+  //   temp_map.y = vio_manager->visual_sub_map_cur[i]->pos_[1];
+  //   temp_map.z = vio_manager->visual_sub_map_cur[i]->pos_[2];
+  //   temp_map.intensity = 0.;
+  //   visual_sub_map->push_back(temp_map);
+  // }
 
   publish_frame_world(pubLaserCloudFullRes, vio_manager);
   publish_img_rgb(pubImage, vio_manager);
@@ -441,22 +461,24 @@ void LIVMapper::handleLIO()
   if (pose_output_en) 
   {
     static bool pos_opend = false;
-    std::ofstream evoFile;
+    static int ocount = 0;
+    std::ofstream outFile, evoFile;
     if (!pos_opend) 
     {
       evoFile.open(std::string(ROOT_DIR) + "Log/result/" + seq_name + ".txt", std::ios::out);
       pos_opend = true;
+      if (!evoFile.is_open()) RCLCPP_ERROR(this->node->get_logger(), "open fail\n");
     } 
     else 
     {
       evoFile.open(std::string(ROOT_DIR) + "Log/result/" + seq_name + ".txt", std::ios::app);
+      if (!evoFile.is_open()) RCLCPP_ERROR(this->node->get_logger(), "open fail\n");
     }
-    if (evoFile.is_open()) {
-      Eigen::Quaterniond q(_state.rot_end);
-      evoFile << std::fixed;
-      evoFile << LidarMeasures.last_lio_update_time << " " << _state.pos_end[0] << " " << _state.pos_end[1] << " " << _state.pos_end[2] << " "
-              << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << std::endl;
-    }
+    Eigen::Matrix4d outT;
+    Eigen::Quaterniond q(_state.rot_end);
+    evoFile << std::fixed;
+    evoFile << LidarMeasures.last_lio_update_time << " " << _state.pos_end[0] << " " << _state.pos_end[1] << " " << _state.pos_end[2] << " "
+            << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << std::endl;
   }
   
   euler_cur = RotMtoEuler(_state.rot_end);
@@ -465,7 +487,7 @@ void LIVMapper::handleLIO()
 
   double t3 = omp_get_wtime();
 
-  static PointCloudXYZI::Ptr world_lidar(new PointCloudXYZI());
+  PointCloudXYZI::Ptr world_lidar(new PointCloudXYZI());
   transformLidar(_state.rot_end, _state.pos_end, feats_down_body, world_lidar);
   for (size_t i = 0; i < world_lidar->points.size(); i++) 
   {
@@ -489,8 +511,7 @@ void LIVMapper::handleLIO()
   
   PointCloudXYZI::Ptr laserCloudFullRes(dense_map_en ? feats_undistort : feats_down_body);
   int size = laserCloudFullRes->points.size();
-  static PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI());
-  laserCloudWorld->resize(size);
+  PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(size, 1));
 
   for (int i = 0; i < size; i++) 
   {
@@ -507,6 +528,17 @@ void LIVMapper::handleLIO()
   frame_num++;
   aver_time_consu = aver_time_consu * (frame_num - 1) / frame_num + (t4 - t0) / frame_num;
 
+  // aver_time_icp = aver_time_icp * (frame_num - 1) / frame_num + (t2 - t1) / frame_num;
+  // aver_time_map_inre = aver_time_map_inre * (frame_num - 1) / frame_num + (t4 - t3) / frame_num;
+  // aver_time_solve = aver_time_solve * (frame_num - 1) / frame_num + (solve_time) / frame_num;
+  // aver_time_const_H_time = aver_time_const_H_time * (frame_num - 1) / frame_num + solve_const_H_time / frame_num;
+  // printf("[ mapping time ]: per scan: propagation %0.6f downsample: %0.6f match: %0.6f solve: %0.6f  ICP: %0.6f  map incre: %0.6f total: %0.6f \n"
+  //         "[ mapping time ]: average: icp: %0.6f construct H: %0.6f, total: %0.6f \n",
+  //         t_prop - t0, t1 - t_prop, match_time, solve_time, t3 - t1, t5 - t3, t5 - t0, aver_time_icp, aver_time_const_H_time, aver_time_consu);
+
+  // printf("\033[1;36m[ LIO mapping time ]: current scan: icp: %0.6f secs, map incre: %0.6f secs, total: %0.6f secs.\033[0m\n"
+  //         "\033[1;36m[ LIO mapping time ]: average: icp: %0.6f secs, map incre: %0.6f secs, total: %0.6f secs.\033[0m\n",
+  //         t2 - t1, t4 - t3, t4 - t0, aver_time_icp, aver_time_map_inre, aver_time_consu);
   printf("\033[1;34m+-------------------------------------------------------------+\033[0m\n");
   printf("\033[1;34m|                         LIO Mapping Time                    |\033[0m\n");
   printf("\033[1;34m+-------------------------------------------------------------+\033[0m\n");
@@ -542,11 +574,11 @@ void LIVMapper::savePCD()
       voxel_filter.setLeafSize(filter_size_pcd, filter_size_pcd, filter_size_pcd);
       voxel_filter.filter(*downsampled_cloud);
   
-      pcd_writer.writeBinary(raw_points_dir, *pcl_wait_save); 
+      pcd_writer.writeBinary(raw_points_dir, *pcl_wait_save); // Save the raw point cloud data
       std::cout << GREEN << "Raw point cloud data saved to: " << raw_points_dir 
                 << " with point count: " << pcl_wait_save->points.size() << RESET << std::endl;
       
-      pcd_writer.writeBinary(downsampled_points_dir, *downsampled_cloud); 
+      pcd_writer.writeBinary(downsampled_points_dir, *downsampled_cloud); // Save the downsampled point cloud data
       std::cout << GREEN << "Downsampled point cloud data saved to: " << downsampled_points_dir 
                 << " with point count after filtering: " << downsampled_cloud->points.size() << RESET << std::endl;
 
@@ -591,6 +623,8 @@ void LIVMapper::run(rclcpp::Node::SharedPtr &node)
 
     processImu();
 
+    // if (!p_imu->imu_time_init) continue;
+
     stateEstimationAndMapping();
   }
   savePCD();
@@ -619,24 +653,25 @@ void LIVMapper::prop_imu_once(StatesGroup &imu_prop_state, const double dt, V3D 
 void LIVMapper::imu_prop_callback()
 {
   if (p_imu->imu_need_init || !new_imu || !ekf_finish_once) { return; }
-  // Thread-safe lock to prevent race conditions during high-frequency IMU propagation updates
-  std::lock_guard<std::mutex> lock(mtx_buffer_imu_prop);
-  new_imu = false; 
+  mtx_buffer_imu_prop.lock();
+  new_imu = false; // 控制 propagate 频率和 IMU 频率一致
   if (imu_prop_enable && !prop_imu_buffer.empty())
   {
     static double last_t_from_lidar_end_time = 0;
     if (state_update_flg)
     {
       imu_propagate = latest_ekf_state;
+      // drop all useless imu pkg
       while ((!prop_imu_buffer.empty() && stamp2Sec(prop_imu_buffer.front().header.stamp) < latest_ekf_time))
       {
         prop_imu_buffer.pop_front();
       }
       last_t_from_lidar_end_time = 0;
-      for (size_t i = 0; i < prop_imu_buffer.size(); i++)
+      for (int i = 0; i < prop_imu_buffer.size(); i++)
       {
         double t_from_lidar_end_time = stamp2Sec(prop_imu_buffer[i].header.stamp) - latest_ekf_time;
         double dt = t_from_lidar_end_time - last_t_from_lidar_end_time;
+        // cout << "prop dt" << dt << ", " << t_from_lidar_end_time << ", " << last_t_from_lidar_end_time << endl;
         V3D acc_imu(prop_imu_buffer[i].linear_acceleration.x, prop_imu_buffer[i].linear_acceleration.y, prop_imu_buffer[i].linear_acceleration.z);
         V3D omg_imu(prop_imu_buffer[i].angular_velocity.x, prop_imu_buffer[i].angular_velocity.y, prop_imu_buffer[i].angular_velocity.z);
         prop_imu_once(imu_propagate, dt, acc_imu, omg_imu);
@@ -673,11 +708,12 @@ void LIVMapper::imu_prop_callback()
     imu_prop_odom.twist.twist.linear.z = vel_i.z();
     pubImuPropOdom->publish(imu_prop_odom);
   }
+  mtx_buffer_imu_prop.unlock();
 }
 
 void LIVMapper::transformLidar(const Eigen::Matrix3d rot, const Eigen::Vector3d t, const PointCloudXYZI::Ptr &input_cloud, PointCloudXYZI::Ptr &trans_cloud)
 {
-  trans_cloud->clear();
+  PointCloudXYZI().swap(*trans_cloud);
   trans_cloud->reserve(input_cloud->size());
   for (size_t i = 0; i < input_cloud->size(); i++)
   {
@@ -733,34 +769,40 @@ void LIVMapper::RGBpointBodyToWorld(PointType const *const pi, PointType *const 
 void LIVMapper::standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg)
 {
   if (!lidar_en) return;
-  // Guard point cloud queue and timestamp buffers across asynchronous ROS callbacks  
-  std::lock_guard<std::mutex> lock(mtx_buffer);
+  mtx_buffer.lock();
+  // cout<<"got feature"<<endl;
   if (stamp2Sec(msg->header.stamp) < last_timestamp_lidar)
   {
     RCLCPP_ERROR(this->node->get_logger(),"lidar loop back, clear buffer");
     lid_raw_data_buffer.clear();
   }
+  // ROS_INFO("get point cloud at time: %.6f", stamp2Sec(msg->header.stamp));
   PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
   p_pre->process(msg, ptr);
   lid_raw_data_buffer.push_back(ptr);
   lid_header_time_buffer.push_back(stamp2Sec(msg->header.stamp));
   last_timestamp_lidar = stamp2Sec(msg->header.stamp);
 
+  mtx_buffer.unlock();
   sig_buffer.notify_all();
 }
 
 void LIVMapper::livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr &msg_in)
 {
   if (!lidar_en) return;
-  // Guard point cloud queue and timestamp buffers across asynchronous ROS callbacks
-  std::lock_guard<std::mutex> lock(mtx_buffer);
+  mtx_buffer.lock();
   livox_ros_driver2::msg::CustomMsg::SharedPtr msg(new livox_ros_driver2::msg::CustomMsg(*msg_in));
-
+  // if ((abs(stamp2Sec(msg->header.stamp) - last_timestamp_lidar) > 0.2 && last_timestamp_lidar > 0) || sync_jump_flag)
+  // {
+  //   ROS_WARN("lidar jumps %.3f\n", stamp2Sec(msg->header.stamp) - last_timestamp_lidar);
+  //   sync_jump_flag = true;
+  //   msg->header.stamp = rclcpp::Time().fromSec(last_timestamp_lidar + 0.1);
+  // }
   if (abs(last_timestamp_imu - stamp2Sec(msg->header.stamp)) > 1.0 && !imu_buffer.empty())
   {
     double timediff_imu_wrt_lidar = last_timestamp_imu - stamp2Sec(msg->header.stamp);
     RCLCPP_INFO(this->node->get_logger(), "\033[95mSelf sync IMU and LiDAR, HARD time lag is %.10lf \n\033[0m", timediff_imu_wrt_lidar - 0.100);
-    imu_time_offset = timediff_imu_wrt_lidar;
+    // imu_time_offset = timediff_imu_wrt_lidar;
   }
 
   double cur_head_time = stamp2Sec(msg->header.stamp);
@@ -776,6 +818,7 @@ void LIVMapper::livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstShar
 
   if (!ptr || ptr->empty()) {
     RCLCPP_ERROR(this->node->get_logger(), "Received an empty point cloud");
+    mtx_buffer.unlock();
     return;
   }
 
@@ -783,6 +826,7 @@ void LIVMapper::livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstShar
   lid_header_time_buffer.push_back(cur_head_time);
   last_timestamp_lidar = cur_head_time;
 
+  mtx_buffer.unlock();
   sig_buffer.notify_all();
 }
 
@@ -790,21 +834,11 @@ void LIVMapper::imu_cbk(const sensor_msgs::msg::Imu::ConstSharedPtr &msg_in)
 {
   if (!imu_en) return;
 
-  std::lock_guard<std::mutex> lock(mtx_buffer);
   if (last_timestamp_lidar < 0.0) return;
   RCLCPP_INFO(this->node->get_logger(), "get imu at time: %.6f", stamp2Sec(msg_in->header.stamp));
-  
   sensor_msgs::msg::Imu::SharedPtr msg(new sensor_msgs::msg::Imu(*msg_in));
-  double raw_imu_time = stamp2Sec(msg_in->header.stamp);
-  double current_measured_lag = raw_imu_time - last_timestamp_lidar;
-  // Calculate dynamic IMU-to-Lidar lag using Exponential Moving Average (EMA).
-  // This offset corrects a known Livox ROS driver issue where the IMU's
-  // own timestamp drifts from the LiDAR timestamp (same physical device/driver).
-  if (imu_time_offset == 0.0) imu_time_offset = current_measured_lag;
-  else imu_time_offset = imu_time_offset + 0.01 * (current_measured_lag - imu_time_offset);
-
-  double timestamp = raw_imu_time - imu_time_offset;
-  msg->header.stamp = sec2Stamp(timestamp);
+  msg->header.stamp = sec2Stamp(stamp2Sec(msg->header.stamp) - imu_time_offset);
+  double timestamp = stamp2Sec(msg->header.stamp);
 
   if (fabs(last_timestamp_lidar - timestamp) > 0.5 && (!ros_driver_fix_en))
   {
@@ -814,8 +848,12 @@ void LIVMapper::imu_cbk(const sensor_msgs::msg::Imu::ConstSharedPtr &msg_in)
   if (ros_driver_fix_en) timestamp += std::round(last_timestamp_lidar - timestamp);
   msg->header.stamp = sec2Stamp(timestamp);
 
+  mtx_buffer.lock();
+
   if (last_timestamp_imu > 0.0 && timestamp < last_timestamp_imu)
   {
+    mtx_buffer.unlock();
+    sig_buffer.notify_all();
     RCLCPP_ERROR(this->node->get_logger(), "imu loop back, offset: %lf \n", last_timestamp_imu - timestamp);
     return;
   }
@@ -823,20 +861,23 @@ void LIVMapper::imu_cbk(const sensor_msgs::msg::Imu::ConstSharedPtr &msg_in)
   if (last_timestamp_imu > 0.0 && timestamp > last_timestamp_imu + 0.2)
   {
     RCLCPP_WARN(this->node->get_logger(), "imu time stamp Jumps %0.4lf seconds \n", timestamp - last_timestamp_imu);
-    // Removed production package rejection trap, because otherwise the sync pipeline would freeze, locking up ROS
+    mtx_buffer.unlock();
+    sig_buffer.notify_all();
+    return;
   }
 
   last_timestamp_imu = timestamp;
 
   imu_buffer.push_back(msg);
   cout<<"got imu: "<<timestamp<<" imu size "<<imu_buffer.size()<<endl;
-  
+  mtx_buffer.unlock();
   if (imu_prop_enable)
   {
-    std::lock_guard<std::mutex> prop_lock(mtx_buffer_imu_prop);
-    if (!p_imu->imu_need_init) { prop_imu_buffer.push_back(*msg); }
+    mtx_buffer_imu_prop.lock();
+    if (imu_prop_enable && !p_imu->imu_need_init) { prop_imu_buffer.push_back(*msg); }
     newest_imu = *msg;
     new_imu = true;
+    mtx_buffer_imu_prop.unlock();
   }
   sig_buffer.notify_all();
 }
@@ -848,46 +889,64 @@ cv::Mat LIVMapper::getImageFromMsg(const sensor_msgs::msg::Image::ConstSharedPtr
   return img;
 }
 
+// static int i = 0;
 void LIVMapper::img_cbk(const sensor_msgs::msg::Image::ConstSharedPtr &msg_in)
 {
   if (!img_en) return;
-  
-  std::lock_guard<std::mutex> lock(mtx_buffer);
+  sensor_msgs::msg::Image::SharedPtr msg(new sensor_msgs::msg::Image(*msg_in));
+  // if ((abs(stamp2Sec(msg->header.stamp) - last_timestamp_img) > 0.2 && last_timestamp_img > 0) || sync_jump_flag)
+  // {
+  //   RCLCPP_WARN(this->node->get_logger(), "img jumps %.3f\n", stamp2Sec(msg->header.stamp) - last_timestamp_img);
+  //   sync_jump_flag = true;
+  //   msg->header.stamp = rclcpp::Time().fromSec(last_timestamp_img + 0.1);
+  // }
+
+  // Hiliti2022 40Hz
+  // if (hilti_en)
+  // {
+  //   i++;
+  //   if (i % 4 != 0) return;
+  // }
+  // double msg_header_time =  stamp2Sec(msg->header.stamp);
+  double msg_header_time = stamp2Sec(msg->header.stamp) + img_time_offset;
+  if (abs(msg_header_time - last_timestamp_img) < 0.001) return;
+  RCLCPP_INFO(this->node->get_logger(), "Get image, its header time: %.6f", msg_header_time);
   if (last_timestamp_lidar < 0) return;
 
-  sensor_msgs::msg::Image::SharedPtr msg(new sensor_msgs::msg::Image(*msg_in));
-  // Camera is already on host/system time
-  double raw_img_time = stamp2Sec(msg->header.stamp);
-  double img_time_correct = raw_img_time - img_time_offset;
-  
-  if (abs(img_time_correct - last_timestamp_img) < 0.001) return;
-  RCLCPP_INFO(this->node->get_logger(), "Get image, its header time: %.6f", img_time_correct);
-
-  if (img_time_correct < last_timestamp_img)
+  if (msg_header_time < last_timestamp_img)
   {
     RCLCPP_ERROR(this->node->get_logger(), "image loop back. \n");
     return;
   }
 
-  if (img_time_correct - last_timestamp_img < 0.01)
+  mtx_buffer.lock();
+
+  double img_time_correct = msg_header_time; // last_timestamp_lidar + 0.105;
+
+  if (img_time_correct - last_timestamp_img < 0.02)
   {
     RCLCPP_WARN(this->node->get_logger(), "Image need Jumps: %.6f", img_time_correct);
-    // Removed production pipeline freeze trap
+    mtx_buffer.unlock();
+    sig_buffer.notify_all();
+    return;
   }
 
   cv::Mat img_cur = getImageFromMsg(msg);
   img_buffer.push_back(img_cur);
   img_time_buffer.push_back(img_time_correct);
 
+  // ROS_INFO("Correct Image time: %.6f", img_time_correct);
+
   last_timestamp_img = img_time_correct;
+  // cv::imshow("img", img);
+  // cv::waitKey(1);
+  // cout<<"last_timestamp_img:::"<<last_timestamp_img<<endl;
+  mtx_buffer.unlock();
   sig_buffer.notify_all();
 }
 
 bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
 {
-  // Synchronize multi-sensor queues (LiDAR, IMU, Camera) before passing frames to EKF
-  // Single lock at entry eliminates race conditions during early buffer checks.
-  std::lock_guard<std::mutex> lock(mtx_buffer);
   if (lid_raw_data_buffer.empty() && lidar_en) return false;
   if (img_buffer.empty() && img_en) return false;
   if (imu_buffer.empty() && imu_en) return false;
@@ -899,24 +958,29 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
     if (meas.last_lio_update_time < 0.0) meas.last_lio_update_time = lid_header_time_buffer.front();
     if (!lidar_pushed)
     {
-      meas.lidar = lid_raw_data_buffer.front(); 
+      // If not push the lidar into measurement data buffer
+      meas.lidar = lid_raw_data_buffer.front(); // push the first lidar topic
       if (meas.lidar->points.size() <= 1) return false;
 
-      meas.lidar_frame_beg_time = lid_header_time_buffer.front();                                                 
-      meas.lidar_frame_end_time = meas.lidar_frame_beg_time + meas.lidar->points.back().curvature / double(1000);  
+      meas.lidar_frame_beg_time = lid_header_time_buffer.front();                                                // generate lidar_frame_beg_time
+      meas.lidar_frame_end_time = meas.lidar_frame_beg_time + meas.lidar->points.back().curvature / double(1000); // calc lidar scan end time
       meas.pcl_proc_cur = meas.lidar;
-      lidar_pushed = true;                                                                                        
+      lidar_pushed = true;                                                                                       // flag
     }
 
     if (imu_en && last_timestamp_imu < meas.lidar_frame_end_time)
-    { 
+    { // waiting imu message needs to be
+      // larger than _lidar_frame_end_time,
+      // make sure complete propagate.
+      // ROS_ERROR("out sync");
       return false;
     }
 
-    struct MeasureGroup m; 
+    struct MeasureGroup m; // standard method to keep imu message.
 
     m.imu.clear();
     m.lio_time = meas.lidar_frame_end_time;
+    mtx_buffer.lock();
     while (!imu_buffer.empty())
     {
       if (stamp2Sec(imu_buffer.front()->header.stamp) > meas.lidar_frame_end_time) break;
@@ -925,11 +989,13 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
     }
     lid_raw_data_buffer.pop_front();
     lid_header_time_buffer.pop_front();
+    mtx_buffer.unlock();
     sig_buffer.notify_all();
 
-    meas.lio_vio_flg = LIO; 
+    meas.lio_vio_flg = LIO; // process lidar topic, so timestamp should be lidar scan end.
     meas.measures.push_back(m);
-    lidar_pushed = false; 
+    // ROS_INFO("ONlY HAS LiDAR and IMU, NO IMAGE!");
+    lidar_pushed = false; // sync one whole lidar scan.
     return true;
 
     break;
@@ -937,14 +1003,25 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
 
   case LIVO:
   {
+    /*** For LIVO mode, the time of LIO update is set to be the same as VIO, LIO
+     * first than VIO imediatly ***/
     EKF_STATE last_lio_vio_flg = meas.lio_vio_flg;
+    // double t0 = omp_get_wtime();
     switch (last_lio_vio_flg)
     {
+    // double img_capture_time = meas.lidar_frame_beg_time + exposure_time_init;
     case WAIT:
     case VIO:
     {
+      // printf("!!! meas.lio_vio_flg: %d \n", meas.lio_vio_flg);
       double img_capture_time = img_time_buffer.front() + exposure_time_init;
+      /*** has img topic, but img topic timestamp larger than lidar end time,
+       * process lidar topic. After LIO update, the meas.lidar_frame_end_time
+       * will be refresh. ***/
       if (meas.last_lio_update_time < 0.0) meas.last_lio_update_time = lid_header_time_buffer.front();
+      // printf("[ Data Cut ] wait \n");
+      // printf("[ Data Cut ] last_lio_update_time: %lf \n",
+      // meas.last_lio_update_time);
 
       double lid_newest_time = lid_header_time_buffer.back() + lid_raw_data_buffer.back()->points.back().curvature / double(1000);
       double imu_newest_time = stamp2Sec(imu_buffer.back()->header.stamp);
@@ -959,19 +1036,30 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
 
       if (img_capture_time > lid_newest_time || img_capture_time > imu_newest_time)
       {
+        // RCLCPP_ERROR(this->node->get_logger(), "lost first camera frame");
+        // printf("img_capture_time, lid_newest_time, imu_newest_time: %lf , %lf
+        // , %lf \n", img_capture_time, lid_newest_time, imu_newest_time);
         return false;
       }
 
       struct MeasureGroup m;
 
+      // printf("[ Data Cut ] LIO \n");
+      // printf("[ Data Cut ] img_capture_time: %lf \n", img_capture_time);
       m.imu.clear();
       m.lio_time = img_capture_time;
+      mtx_buffer.lock();
       while (!imu_buffer.empty())
       {
         if (stamp2Sec(imu_buffer.front()->header.stamp) > m.lio_time) break;
+
         if (stamp2Sec(imu_buffer.front()->header.stamp) > meas.last_lio_update_time) m.imu.push_back(imu_buffer.front());
+
         imu_buffer.pop_front();
+        // printf("[ Data Cut ] imu time: %lf \n",
+        // stamp2Sec(imu_buffer.front()->header.stamp));
       }
+      mtx_buffer.unlock();
       sig_buffer.notify_all();
 
       *(meas.pcl_proc_cur) = *(meas.pcl_proc_next);
@@ -981,6 +1069,7 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
       int max_size = meas.pcl_proc_cur->size() + 24000 * lid_frame_num;
       meas.pcl_proc_cur->reserve(max_size);
       meas.pcl_proc_next->reserve(max_size);
+      // deque<PointCloudXYZI::Ptr> lidar_buffer_tmp;
 
       while (!lid_raw_data_buffer.empty())
       {
@@ -989,7 +1078,7 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
         double frame_header_time(lid_header_time_buffer.front());
         float max_offs_time_ms = (m.lio_time - frame_header_time) * 1000.0f;
 
-        for (size_t i = 0; i < pcl.size(); i++)
+        for (int i = 0; i < pcl.size(); i++)
         {
           auto pt = pcl[i];
           if (pcl[i].curvature < max_offs_time_ms)
@@ -1009,6 +1098,11 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
 
       meas.measures.push_back(m);
       meas.lio_vio_flg = LIO;
+      // meas.last_lio_update_time = m.lio_time;
+      // printf("!!! meas.lio_vio_flg: %d \n", meas.lio_vio_flg);
+      // printf("[ Data Cut ] pcl_proc_cur number: %d \n", meas.pcl_proc_cur
+      // ->points.size()); printf("[ Data Cut ] LIO process time: %lf \n",
+      // omp_get_wtime() - t0);
       return true;
     }
 
@@ -1016,6 +1110,7 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
     {
       double img_capture_time = img_time_buffer.front() + exposure_time_init;
       meas.lio_vio_flg = VIO;
+      // printf("[ Data Cut ] VIO \n");
       meas.measures.clear();
       double imu_time = stamp2Sec(imu_buffer.front()->header.stamp);
 
@@ -1023,19 +1118,32 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
       m.vio_time = img_capture_time;
       m.lio_time = meas.last_lio_update_time;
       m.img = img_buffer.front();
-
+      mtx_buffer.lock();
+      // while ((!imu_buffer.empty() && (imu_time < img_capture_time)))
+      // {
+      //   imu_time = stamp2Sec(imu_buffer.front()->header.stamp);
+      //   if (imu_time > img_capture_time) break;
+      //   m.imu.push_back(imu_buffer.front());
+      //   imu_buffer.pop_front();
+      //   printf("[ Data Cut ] imu time: %lf \n",
+      //   stamp2Sec(imu_buffer.front()->header.stamp));
+      // }
       img_buffer.pop_front();
       img_time_buffer.pop_front();
+      mtx_buffer.unlock();
       sig_buffer.notify_all();
       meas.measures.push_back(m);
-      lidar_pushed = false; 
+      lidar_pushed = false; // after VIO update, the _lidar_frame_end_time will be refresh.
+      // printf("[ Data Cut ] VIO process time: %lf \n", omp_get_wtime() - t0);
       return true;
     }
 
     default:
     {
+      // printf("!! WRONG EKF STATE !!");
       return false;
     }
+      // return false;
     }
     break;
   }
@@ -1044,19 +1152,22 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
   {
     if (!lidar_pushed) 
     { 
+      // If not in lidar scan, need to generate new meas
       if (lid_raw_data_buffer.empty())  return false;
-      meas.lidar = lid_raw_data_buffer.front(); 
-      meas.lidar_frame_beg_time = lid_header_time_buffer.front(); 
-      meas.lidar_frame_end_time  = meas.lidar_frame_beg_time + meas.lidar->points.back().curvature / double(1000); 
+      meas.lidar = lid_raw_data_buffer.front(); // push the first lidar topic
+      meas.lidar_frame_beg_time = lid_header_time_buffer.front(); // generate lidar_beg_time
+      meas.lidar_frame_end_time  = meas.lidar_frame_beg_time + meas.lidar->points.back().curvature / double(1000); // calc lidar scan end time
       lidar_pushed = true;             
     }
-    struct MeasureGroup m; 
+    struct MeasureGroup m; // standard method to keep imu message.
     m.lio_time = meas.lidar_frame_end_time;
+    mtx_buffer.lock();
     lid_raw_data_buffer.pop_front();
     lid_header_time_buffer.pop_front();
+    mtx_buffer.unlock();
     sig_buffer.notify_all();
-    lidar_pushed = false; 
-    meas.lio_vio_flg = LO; 
+    lidar_pushed = false; // sync one whole lidar scan.
+    meas.lio_vio_flg = LO; // process lidar topic, so timestamp should be lidar scan end.
     meas.measures.push_back(m);
     return true;
     break;
@@ -1076,6 +1187,7 @@ void LIVMapper::publish_img_rgb(const image_transport::Publisher &pubImage, VIOM
   cv::Mat img_rgb = vio_manager->img_cp;
   cv_bridge::CvImage out_msg;
   out_msg.header.stamp = this->node->get_clock()->now();
+  // out_msg.header.frame_id = "camera_init";
   out_msg.encoding = sensor_msgs::image_encodings::BGR8;
   out_msg.image = img_rgb;
   pubImage.publish(out_msg.toImageMsg());
@@ -1084,9 +1196,7 @@ void LIVMapper::publish_img_rgb(const image_transport::Publisher &pubImage, VIOM
 void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubLaserCloudFullRes, VIOManagerPtr vio_manager)
 {
   if (pcl_w_wait_pub->empty()) return;
-  static PointCloudXYZRGB::Ptr laserCloudWorldRGB(new PointCloudXYZRGB());
-  laserCloudWorldRGB->clear();
-  
+  PointCloudXYZRGB::Ptr laserCloudWorldRGB(new PointCloudXYZRGB());
   if (img_en)
   {
     static int pub_num = 1;
@@ -1096,6 +1206,7 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
       pub_num = 1;
       size_t size = pcl_wait_pub->points.size();
       laserCloudWorldRGB->reserve(size);
+      // double inv_expo = _state.inv_expo_time;
       cv::Mat img_rgb = vio_manager->img_rgb;
       for (size_t i = 0; i < size; i++)
       {
@@ -1108,12 +1219,19 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
         V3D pf(vio_manager->new_frame_->w2f(p_w)); if (pf[2] < 0) continue;
         V2D pc(vio_manager->new_frame_->w2c(p_w));
 
-        if (vio_manager->new_frame_->cam_->isInFrame(pc.cast<int>(), 3)) 
+        if (vio_manager->new_frame_->cam_->isInFrame(pc.cast<int>(), 3)) // 100
         {
           V3F pixel = vio_manager->getInterpolatedPixel(img_rgb, pc);
           pointRGB.r = pixel[2];
           pointRGB.g = pixel[1];
           pointRGB.b = pixel[0];
+          // pointRGB.r = pixel[2] * inv_expo; pointRGB.g = pixel[1] * inv_expo; pointRGB.b = pixel[0] * inv_expo;
+          // if (pointRGB.r > 255) pointRGB.r = 255;
+          // else if (pointRGB.r < 0) pointRGB.r = 0;
+          // if (pointRGB.g > 255) pointRGB.g = 255;
+          // else if (pointRGB.g < 0) pointRGB.g = 0;
+          // if (pointRGB.b > 255) pointRGB.b = 255;
+          // else if (pointRGB.b < 0) pointRGB.b = 0;
           if (pf.norm() > blind_rgb_points) laserCloudWorldRGB->push_back(pointRGB);
         }
       }
@@ -1128,19 +1246,24 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
   sensor_msgs::msg::PointCloud2 laserCloudmsg;
   if (img_en)
   {
+    // cout << "RGB pointcloud size: " << laserCloudWorldRGB->size() << endl;
     pcl::toROSMsg(*laserCloudWorldRGB, laserCloudmsg);
   }
   else 
   { 
     pcl::toROSMsg(*pcl_w_wait_pub, laserCloudmsg); 
   }
-  laserCloudmsg.header.stamp = this->node->get_clock()->now(); 
+  laserCloudmsg.header.stamp = this->node->get_clock()->now(); //.fromSec(last_timestamp_lidar);
   laserCloudmsg.header.frame_id = "camera_init";
   pubLaserCloudFullRes->publish(laserCloudmsg);
 
   /**************** save map ****************/
+  /* 1. make sure you have enough memories
+  /* 2. noted that pcd save will influence the real-time performences **/
   if (pcd_save_en)
   {
+    int size = feats_undistort->points.size();
+    PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(size, 1));
     static int scan_wait_num = 0;
 
     if (img_en)
@@ -1163,13 +1286,13 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
         cout << "current scan saved to /PCD/" << all_points_dir << endl;
         if (img_en)
         {
-          pcd_writer.writeBinary(all_points_dir, *pcl_wait_save); 
-          pcl_wait_save->clear();
+          pcd_writer.writeBinary(all_points_dir, *pcl_wait_save); // pcl::io::savePCDFileASCII(all_points_dir, *pcl_wait_save);
+          PointCloudXYZRGB().swap(*pcl_wait_save);
         }
         else
         {
           pcd_writer.writeBinary(all_points_dir, *pcl_wait_save_intensity);
-          pcl_wait_save_intensity->clear();
+          PointCloudXYZI().swap(*pcl_wait_save_intensity);
         }        
         Eigen::Quaterniond q(_state.rot_end);
         fout_pcd_pos << _state.pos_end[0] << " " << _state.pos_end[1] << " " << _state.pos_end[2] << " " << q.w() << " " << q.x() << " " << q.y()
@@ -1178,15 +1301,15 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
       }
     }
   }
-  pcl_wait_pub->clear();
-  pcl_w_wait_pub->clear();
+  if(laserCloudWorldRGB->size() > 0)  PointCloudXYZI().swap(*pcl_wait_pub); 
+  PointCloudXYZI().swap(*pcl_w_wait_pub);
 }
 
 void LIVMapper::publish_visual_sub_map(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubSubVisualMap)
 {
   PointCloudXYZI::Ptr laserCloudFullRes(visual_sub_map);
   int size = laserCloudFullRes->points.size(); if (size == 0) return;
-  static PointCloudXYZI::Ptr sub_pcl_visual_map_pub(new PointCloudXYZI());
+  PointCloudXYZI::Ptr sub_pcl_visual_map_pub(new PointCloudXYZI());
   *sub_pcl_visual_map_pub = *laserCloudFullRes;
   if (1)
   {
@@ -1201,8 +1324,7 @@ void LIVMapper::publish_visual_sub_map(const rclcpp::Publisher<sensor_msgs::msg:
 void LIVMapper::publish_effect_world(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubLaserCloudEffect, const std::vector<PointToPlane> &ptpl_list)
 {
   int effect_feat_num = ptpl_list.size();
-  static PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI());
-  laserCloudWorld->resize(effect_feat_num);
+  PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(effect_feat_num, 1));
   for (int i = 0; i < effect_feat_num; i++)
   {
     laserCloudWorld->points[i].x = ptpl_list[i].point_w_[0];
@@ -1231,10 +1353,11 @@ void LIVMapper::publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry
 {
   odomAftMapped.header.frame_id = "camera_init";
   odomAftMapped.child_frame_id = "aft_mapped";
-  odomAftMapped.header.stamp = this->node->get_clock()->now(); 
+  odomAftMapped.header.stamp = this->node->get_clock()->now(); //.ros::Time()fromSec(last_timestamp_lidar);
   set_posestamp(odomAftMapped.pose.pose);
 
-  static std::shared_ptr<tf2_ros::TransformBroadcaster> br = std::make_shared<tf2_ros::TransformBroadcaster>(this->node);
+  static std::shared_ptr<tf2_ros::TransformBroadcaster> br;
+  br = std::make_shared<tf2_ros::TransformBroadcaster>(this->node);
   tf2::Transform transform;
   tf2::Quaternion q;
   transform.setOrigin(tf2::Vector3(_state.pos_end(0), _state.pos_end(1), _state.pos_end(2)));
