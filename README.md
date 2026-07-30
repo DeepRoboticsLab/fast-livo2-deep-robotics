@@ -5,6 +5,23 @@ This repo documents the process of installing and reproducing FAST-LIVO2 on DEEP
 
 **System Environment:** Ubuntu 22.04, ROS2 Humble, Lite3 Venture (ONLY THIS VERSION!), AGX Jetson Orin (or other onboard compute)
 
+## Which branch should I use?
+
+This repository has two branches depending on your hardware setup:
+
+### `main` (this branch)
+Use this if your sensors are **hardware synchronized**, or if you are running **public datasets** such as `Retail_Street.db3` (see Section 3).
+
+### `soft-sync`
+Use this if your IMU, LiDAR and Camera run on **separate, unsynchronized clocks** without hardware sync. SLAM will typically fail after ~20 seconds without this correction.
+
+To switch:
+```bash
+git checkout soft-sync
+```
+
+> For a full explanation of how the software synchronization works, see **Section 5**.
+
 ## 1. Hardware setup
 ### 1.1 Onboard compute setup and ROS2 installation
 

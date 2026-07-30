@@ -29,11 +29,24 @@ else
 fi
 echo "ROS version is: "$ROS_VERSION
 
-# clear `build/` folder.
-# TODO: Do not clear these folders, if the last build is based on the same ROS version.
-rm -rf ../../build/
-rm -rf ../../devel/
-rm -rf ../../install/
+# Will not clear these folders, if the last build is based on the same ROS version
+LAST_BUILD_FILE=../../last_build
+OLD_VALUE=""
+if [ -f ${LAST_BUILD_FILE} ]; then
+    OLD_VALUE=$(cat ${LAST_BUILD_FILE})
+fi
+
+if [ "$OLD_VALUE" != "$ROS_VERSION$ROS_DISTRO" ]; then
+    # clear `build/` folder.
+    echo "Version changed -> full clean build"
+    rm -rf ../../build/
+    rm -rf ../../devel/
+    rm -rf ../../install/
+else 
+    echo "Same version as last time -> Incremental build"
+fi
+echo "$ROS_VERSION$ROS_DISTRO" > ${LAST_BUILD_FILE}
+
 # clear src/CMakeLists.txt if it exists.
 if [ -f ../CMakeLists.txt ]; then
     rm -f ../CMakeLists.txt
