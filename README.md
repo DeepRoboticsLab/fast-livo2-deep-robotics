@@ -32,6 +32,40 @@ Please setup your onboard compute and install ROS2 on it. For details, please ch
 
 If you have Lite3 pro/lidar, you don't need further hardware extension cause there is already a Orin NX and you can use that as additional onboard compute. If you have Lite3 venture, you can follow the installation process in our video. For the 3d printed structure parts, you can download them from [here](https://drive.google.com/drive/folders/1KmWNuOF0Qg5XM6EQKRiWrkJJhoBknjIZ?usp=drive_link). 
 
+#### 1.2.1 Assemble the AGX kit and adapter
+
+Required parts:
+
+- AGX kit
+- Adapter bracket
+- Four M2.5 x 55 partially threaded socket-head cap screws
+
+Place the AGX kit on the adapter bracket and align the four mounting holes.
+Insert the four M2.5 x 55 screws through the underside of the adapter and into
+the AGX kit. Tighten the screws evenly so that the AGX kit sits flat on the
+adapter.
+
+| Assembly orientation | Four mounting points on the underside |
+| --- | --- |
+| <img src="images/agx-adapter-exploded.png" alt="Exploded view of the AGX kit above the adapter bracket" width="380"> | <img src="images/agx-adapter-mounting-holes.png" alt="Underside of the AGX kit showing the four adapter mounting points" width="380"> |
+
+#### 1.2.2 Mount the assembly on the Lite3 upper cover
+
+Required parts:
+
+- AGX-and-adapter assembly from Section 1.2.1
+- Lite3 upper cover
+- Three M3 x 6 socket-head cap screws
+
+Position the completed assembly on the Lite3 upper cover as shown below.
+Align the three adapter mounting points with the corresponding holes in the
+upper cover, then install the three M3 x 6 screws. Tighten them evenly and
+confirm that the assembly is seated securely before operating the robot.
+
+| Mounting orientation | Mounting-point detail |
+| --- | --- |
+| <img src="images/agx-lite3-mounting-overview.png" alt="AGX and adapter assembly positioned on the Lite3 upper cover" width="430"> | <img src="images/agx-lite3-mounting-detail.png" alt="Detail view of an adapter mounting point on the Lite3 upper cover" width="340"> |
+
 ## 2. FAST-LIVO2 Installation and Reproduction
 
 ### 2.1 Install Livox_ros_driver2 and Livox-SDK2
