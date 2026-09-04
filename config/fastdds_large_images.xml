@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <!-- The default 512 KiB SHM segment is smaller than one 848x480 Z16 image. -->
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>large_image_shm</transport_id>
+      <type>SHM</type>
+      <maxMessageSize>2097152</maxMessageSize>
+      <segment_size>16777216</segment_size>
+      <port_queue_capacity>512</port_queue_capacity>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>udp_v4</transport_id>
+      <type>UDPv4</type>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <participant profile_name="large_image_participant" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>large_image_shm</transport_id>
+        <transport_id>udp_v4</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

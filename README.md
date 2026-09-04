@@ -358,6 +358,8 @@ Terminal 2 — D435i RGB camera:
 cd fast-livo2-deep-robotics
 source /opt/ros/humble/setup.bash
 source install/setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds_large_images.xml"
 ros2 launch realsense2_camera rs_launch.py \
   enable_rgbd:=false \
   enable_sync:=false \
@@ -368,6 +370,29 @@ ros2 launch realsense2_camera rs_launch.py \
 ```
 
 Confirm that the camera startup output says `Width: 640, Height: 480, FPS: 30`.
+
+The two exports are required when publishing RealSense images with Fast DDS on
+this system. A serialized `848x480` Z16 depth image and a `640x480` RGB image
+are each larger than Fast DDS's default shared-memory segment. The profile in
+`config/fastdds_large_images.xml` increases the segment
+to 16 MiB while retaining UDP transport. Without it, the camera still captures
+at 30 Hz, but large ROS image messages can arrive at subscribers in irregular
+bursts. The setting must be exported in the terminal that launches the camera;
+local subscriber terminals do not need to export it.
+
+For a verified depth-only `848x480x30` stream, use:
+
+```bash
+cd fast-livo2-deep-robotics
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds_large_images.xml"
+ros2 launch realsense2_camera rs_launch.py \
+  enable_color:=false \
+  enable_depth:=true \
+  depth_module.depth_profile:=848x480x30
+```
 
 Terminal 3 — FAST-LIVO2 and RViz:
 
